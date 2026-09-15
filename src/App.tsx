@@ -1,6 +1,5 @@
 import {
   useEffect,
-  useRef,
   useState,
   type CSSProperties,
   type FormEvent,
@@ -15,8 +14,6 @@ import {
   Sparkles,
   Settings2,
   ShieldCheck,
-  Upload,
-  Download,
   Check,
   Clock3,
   Dumbbell,
@@ -29,38 +26,18 @@ import {
 import { useHealth } from "./hooks/useHealth";
 import { recommend } from "./lib/recommendation";
 import { dateKey, distance, sleepTime, activityDate, DAY } from "./lib/dates";
-import {
-  activityMeta,
-  type Feeling,
-  type Provider,
-  type Workout,
-} from "./lib/types";
-import { importFile, syncHealth } from "./lib/health";
-import { makeDemo } from "./data/demo";
+import { activityMeta, type Feeling, type Workout } from "./lib/types";
+import { isNativeHealthAvailable, syncHealth } from "./lib/health";
 import Dialog from "./components/Dialog";
 import { ActivityList, ActivityRow } from "./components/Activities";
 
-type InstallPrompt = Event & {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: string }>;
-};
-type Modal = "plan" | "why" | "data" | "settings" | "log" | "install" | null;
+type Modal = "plan" | "why" | "data" | "settings" | "log" | null;
 const feelings: { id: Feeling; label: string; emoji: string }[] = [
   { id: "great", label: "Great", emoji: "⚡" },
   { id: "good", label: "Good", emoji: "🙂" },
   { id: "tired", label: "Tired", emoji: "🪫" },
   { id: "sore", label: "Sore", emoji: "🛌" },
 ];
-function downloadJson(data: unknown, name: string) {
-  const url = URL.createObjectURL(
-    new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }),
-  );
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = name;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
 export default function App() {
   const [now, setNow] = useState(() => new Date());
   const health = useHealth(now),
@@ -73,13 +50,10 @@ export default function App() {
     [selected, setSelected] = useState<Workout | null>(null);
   const [toast, setToast] = useState(""),
     [busy, setBusy] = useState(false),
-    [importError, setImportError] = useState(""),
+    [healthError, setHealthError] = useState(""),
     [confirmClear, setConfirmClear] = useState(false);
-  const [installPrompt, setInstallPrompt] = useState<InstallPrompt | null>(
-    null,
-  );
   const [online, setOnline] = useState(navigator.onLine);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const nativeHealth = isNativeHealthAvailable();
   const rec = recommend(data, feeling, state.prefs, now);
   const meta = activityMeta[rec.type];
   const isSaved =
@@ -101,22 +75,16 @@ export default function App() {
     };
     const hash = () =>
       setPage(location.hash === "#activities" ? "activities" : "today");
-    const install = (e: Event) => {
-      e.preventDefault();
-      setInstallPrompt(e as InstallPrompt);
-    };
     window.addEventListener("hashchange", hash);
     window.addEventListener("online", update);
     window.addEventListener("offline", update);
     window.addEventListener("focus", update);
-    window.addEventListener("beforeinstallprompt", install);
     return () => {
       clearInterval(tick);
       window.removeEventListener("hashchange", hash);
       window.removeEventListener("online", update);
       window.removeEventListener("offline", update);
       window.removeEventListener("focus", update);
-      window.removeEventListener("beforeinstallprompt", install);
     };
   }, []);
   useEffect(() => {
@@ -186,38 +154,20 @@ export default function App() {
     )
       setToast("Check-in saved. Your plan is up to date.");
   }
-  async function importSelected(file?: File) {
-    if (!file) return;
+  async function sync() {
     setBusy(true);
-    setImportError("");
+    setHealthError("");
     try {
-      const result = await importFile(file);
+      const result = await syncHealth();
       if (health.importData(result)) {
+        setNow(new Date());
         setToast(
-          `${result.workouts.length} activities imported. Your plan is ready.`,
+          `${result.workouts.length} activities synced from Apple Health.`,
         );
         setModal(null);
       }
     } catch (e) {
-      setImportError(
-        e instanceof Error ? e.message : "Import failed. Please try again.",
-      );
-    } finally {
-      setBusy(false);
-      if (inputRef.current) inputRef.current.value = "";
-    }
-  }
-  async function sync(provider: Provider) {
-    setBusy(true);
-    setImportError("");
-    try {
-      const result = await syncHealth(provider);
-      if (health.importData(result)) {
-        setToast("Health data updated.");
-        setModal(null);
-      }
-    } catch (e) {
-      setImportError(
+      setHealthError(
         e instanceof Error ? e.message : "Could not sync your data.",
       );
     } finally {
@@ -312,7 +262,7 @@ export default function App() {
           <button
             className="source-button"
             onClick={() => {
-              setImportError("");
+              setHealthError("");
               setModal("data");
             }}
           >
@@ -322,7 +272,7 @@ export default function App() {
                 ? "Sample data"
                 : data.workouts.length || data.daily.length
                   ? "Your health data"
-                  : "Add health data"}
+                  : "Connect Apple Health"}
             </span>
             <ChevronRight size={13} />
           </button>
@@ -561,7 +511,7 @@ export default function App() {
                     </b>
                     <span>
                       {rec.sleep === undefined
-                        ? "Import recent sleep data"
+                        ? "Connect Apple Health to add sleep"
                         : sleepTime(rec.sleep)}{" "}
                       <em>
                         {rec.sleep !== undefined
@@ -590,7 +540,7 @@ export default function App() {
                     </b>
                     <span>
                       {rec.hrv === undefined
-                        ? "Import HRV or resting heart rate"
+                        ? "Connect Apple Health to add recovery"
                         : `HRV ${Math.round(rec.hrv)} ms`}{" "}
                       <em>{hrvSteady ? "· near your usual" : ""}</em>
                     </span>
@@ -697,13 +647,13 @@ export default function App() {
                   <span>👟</span>
                   <h3>Your next chapter starts here</h3>
                   <p>
-                    Add your health data to get a more personal recommendation.
+                    Connect Apple Health to get a more personal recommendation.
                   </p>
                   <button
                     className="secondary-button"
                     onClick={() => setModal("data")}
                   >
-                    Add health data <ArrowUpRight size={16} />
+                    Connect Apple Health <ArrowUpRight size={16} />
                   </button>
                 </div>
               )}
@@ -726,7 +676,7 @@ export default function App() {
                 className="secondary-button"
                 onClick={() => setModal("data")}
               >
-                <Upload size={15} /> Import activities
+                <Heart size={15} /> Sync Apple Health
               </button>
             </div>
             <ActivityList
@@ -740,8 +690,8 @@ export default function App() {
         )}
         <footer>
           Made for the long run. <span>One day at a time.</span>
-          <button className="footer-right" onClick={() => setModal("install")}>
-            <Download size={12} /> Add to your home screen
+          <button className="footer-right" onClick={() => setModal("data")}>
+            <Heart size={12} /> Apple Health
           </button>
         </footer>
       </main>
@@ -806,8 +756,8 @@ export default function App() {
           )}
           {demo && (
             <p className="fine-print">
-              You’re exploring a sample plan. Import your data to log your own
-              sessions.
+              You’re exploring a sample plan. Connect Apple Health in the iPhone
+              app to use your own data.
             </p>
           )}
         </Dialog>
@@ -870,22 +820,22 @@ export default function App() {
       )}
       {modal === "data" && (
         <Dialog
-          title="Make it personal"
+          title="Connect Apple Health"
           onClose={() => {
             if (!busy) setModal(null);
           }}
         >
           <p className="dialog-copy">
-            Bring your recent health data. We’ll turn it into a clearer next
-            step.
+            Give TrainToday read-only access to the signals that shape today’s
+            recommendation.
           </p>
           <div className="local-note">
             <ShieldCheck size={20} />
             <div>
-              <b>Your health data stays here.</b>
+              <b>Private by design</b>
               <p>
-                Imports are processed and stored in this browser. Nothing is
-                uploaded. Last 90 days only.
+                Your health data is read on your iPhone and kept on this device.
+                TrainToday does not upload it or write anything to Apple Health.
               </p>
             </div>
           </div>
@@ -895,40 +845,27 @@ export default function App() {
             </span>
             <div>
               <h3>Apple Health</h3>
-              <p>Workouts, sleep, HRV, resting heart rate</p>
+              <p>
+                Workouts, sleep, HRV, resting heart rate, steps, and distance
+              </p>
             </div>
-            <span className="tiny-badge">XML</span>
+            <span className="tiny-badge">READ ONLY</span>
           </div>
-          <div className="provider-card">
-            <span className="provider-icon google">
-              <Activity size={22} />
-            </span>
-            <div>
-              <h3>Health Connect</h3>
-              <p>Normalized export from an Android companion</p>
-            </div>
-            <span className="tiny-badge">JSON</span>
-          </div>
-          <input
-            type="file"
-            ref={inputRef}
-            accept=".xml,.json"
-            className="visually-hidden"
-            aria-label="Import health export file"
-            onChange={(e) => void importSelected(e.target.files?.[0])}
-            disabled={busy}
-          />
           <button
             className="primary-button"
-            disabled={busy}
-            onClick={() => inputRef.current?.click()}
+            disabled={busy || !nativeHealth}
+            onClick={() => void sync()}
           >
-            <Upload size={18} />
-            {busy ? "Reading your health data…" : "Choose a health export"}
+            <Heart size={18} fill="currentColor" />
+            {busy
+              ? "Reading Apple Health…"
+              : nativeHealth
+                ? "Continue to Apple Health"
+                : "iPhone app required"}
           </button>
-          {importError && (
+          {healthError && (
             <div className="notice error" role="alert">
-              {importError}
+              {healthError}
             </div>
           )}
           {health.error && (
@@ -937,74 +874,34 @@ export default function App() {
             </div>
           )}
           <details className="help-details">
-            <summary>How to get your Apple Health export</summary>
-            <ol>
-              <li>Open Health on your iPhone and tap your profile photo.</li>
-              <li>
-                Choose <b>Export All Health Data</b> and save the ZIP to Files.
-              </li>
-              <li>
-                Unzip the file, open the apple_health_export folder, and choose{" "}
-                <b>export.xml</b> here.
-              </li>
-            </ol>
+            <summary>What happens next?</summary>
             <p>
-              Use the original XML, up to 100 MB. Your export replaces the
-              previous import.
+              Apple shows its own permission screen. You can choose exactly
+              which categories TrainToday may read and change those choices
+              later in Settings → Health → Data Access & Devices.
             </p>
           </details>
-          <details className="help-details">
-            <summary>Can I sync automatically?</summary>
-            <p>
-              Apple HealthKit and Android Health Connect require a native app.
-              This PWA cannot request those device permissions. A companion can
-              supply data through the documented adapter.
-            </p>
-            {window.trainTodayHealth ? (
-              <div className="button-row">
-                <button
-                  className="secondary-button"
-                  disabled={busy}
-                  onClick={() => void sync("Apple Health")}
-                >
-                  Sync Apple Health
-                </button>
-                <button
-                  className="secondary-button"
-                  disabled={busy}
-                  onClick={() => void sync("Health Connect")}
-                >
-                  Sync Health Connect
-                </button>
-              </div>
-            ) : (
-              <p>
-                Automatic sync isn’t connected in this browser. Export import is
-                available now.
-              </p>
-            )}
-          </details>
-          <button
-            className="text-button centered"
-            onClick={() =>
-              downloadJson(
-                { ...makeDemo(now), provider: "Health Connect" },
-                "traintoday-format-example.json",
-              )
-            }
-          >
-            <Download size={14} /> Download an example JSON format
-          </button>
           {!demo && data.workouts.length > 0 && (
             <p className="fine-print">
-              {data.provider} · imported {activityDate(data.importedAt, now)} ·{" "}
-              {data.workouts.length} activities
+              Apple Health · last synced {activityDate(data.importedAt, now)} ·{" "}
+              {data.workouts.length} recent activities
             </p>
           )}
-          {demo && (
+          {demo && nativeHealth && (
             <p className="fine-print">
-              Currently showing clearly labeled sample data.
+              You’re currently viewing sample data. Connecting replaces it with
+              your recent Apple Health data.
             </p>
+          )}
+          {!nativeHealth && (
+            <div className="web-preview-note">
+              <Info size={18} />
+              <p>
+                Apple’s permission screen is available in the TrainToday iPhone
+                app. This website remains a sample preview because Safari and
+                home-screen web apps cannot access HealthKit.
+              </p>
+            </div>
           )}
         </Dialog>
       )}
@@ -1064,23 +961,6 @@ export default function App() {
             <span>Health data</span>
             <ChevronRight size={16} />
           </button>
-          <button className="settings-row" onClick={() => setModal("install")}>
-            <Download size={18} />
-            <span>Install TrainToday</span>
-            <ChevronRight size={16} />
-          </button>
-          {!demo && data.workouts.length > 0 && (
-            <button
-              className="settings-row"
-              onClick={() =>
-                downloadJson(data, "traintoday-health-backup.json")
-              }
-            >
-              <Download size={18} />
-              <span>Export my local data</span>
-              <ChevronRight size={16} />
-            </button>
-          )}
           <div className="data-management">
             <p>
               Health data and preferences are saved on this device. Clearing
@@ -1089,8 +969,8 @@ export default function App() {
             {confirmClear ? (
               <div className="delete-confirm">
                 <p>
-                  Delete imported activities, check-ins, and saved plans from
-                  this browser?
+                  Delete synced activities, check-ins, and saved plans from this
+                  device? Apple Health itself is unchanged.
                 </p>
                 <div className="button-row">
                   <button
@@ -1135,55 +1015,6 @@ export default function App() {
               </button>
             )}
           </div>
-        </Dialog>
-      )}
-      {modal === "install" && (
-        <Dialog
-          title="A little clarity, every day"
-          onClose={() => setModal(null)}
-        >
-          <div className="install-mark">
-            <span className="brand-mark">
-              t<span>t</span>
-            </span>
-          </div>
-          <p className="dialog-copy">
-            Keep TrainToday on your home screen. Open your plan like an app,
-            even when you’re offline after the first visit.
-          </p>
-          {installPrompt ? (
-            <button
-              className="primary-button"
-              onClick={async () => {
-                await installPrompt.prompt();
-                const choice = await installPrompt.userChoice;
-                if (choice.outcome === "accepted") {
-                  setToast("TrainToday is ready for your home screen.");
-                  setModal(null);
-                }
-                setInstallPrompt(null);
-              }}
-            >
-              <Download size={18} /> Install TrainToday
-            </button>
-          ) : (
-            <div className="install-instructions">
-              <h3>On iPhone or iPad</h3>
-              <p>
-                Open this page in Safari, tap Share, then{" "}
-                <b>Add to Home Screen</b>.
-              </p>
-              <h3>On Android or desktop</h3>
-              <p>
-                Open the browser menu and choose <b>Install app</b> or{" "}
-                <b>Add to Home screen</b>. Already installed? You’re all set.
-              </p>
-            </div>
-          )}
-          <p className="fine-print">
-            Use your usual browser for installation. An embedded preview may not
-            offer it.
-          </p>
         </Dialog>
       )}
       {modal === "log" && (
@@ -1296,7 +1127,7 @@ export default function App() {
               <b>{demo ? "Sample activity" : selected.source}</b>
               <p>
                 {demo
-                  ? "This is example data. Import your health export to see your own activities."
+                  ? "This is example data. Connect Apple Health in the iPhone app to see your own activities."
                   : "Stored on this device. Included in your recent training history."}
               </p>
             </div>

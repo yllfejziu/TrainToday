@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { makeDemo } from "../data/demo";
 import { dateKey } from "../lib/dates";
-import { normalizeHealth } from "../lib/import";
+import { normalizeHealth } from "../lib/normalizeHealth";
 import type { HealthData, CheckIn, Preferences, Workout } from "../lib/types";
 const KEY = "traintoday:v1";
 export interface SavedPlan {
@@ -60,7 +60,7 @@ function load(): { state: Store; error: string } {
     return {
       state: { ...defaults, mode: "personal" },
       error:
-        "Saved data could not be read. Please import your health export again.",
+        "Saved health data could not be read. Please connect Apple Health again.",
     };
   }
 }

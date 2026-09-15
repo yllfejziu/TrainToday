@@ -1281,6 +1281,25 @@ footer .footer-right {
   text-align: center;
   margin-top: 17px;
 }
+.web-preview-note {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-top: 20px;
+  padding: 15px;
+  border-radius: 12px;
+  background: #f2f1ed;
+  color: #6e7768;
+}
+.web-preview-note svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.web-preview-note p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.65;
+}
 .reason-list {
   list-style: none;
   padding: 0;

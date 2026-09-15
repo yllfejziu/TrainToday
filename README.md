@@ -1,6 +1,6 @@
 # TrainToday
 
-A small, installable training companion that answers **“What should I do today?”** with running, strength training, active recovery, or rest. Concrete plans, a daily check-in, and recent activities keep the experience focused.
+A focused iPhone training companion that answers **“What should I do today?”** with running, strength training, active recovery, or rest. Concrete plans, a daily check-in, and recent Apple Health activities keep the experience useful at a glance. The hosted web build is a sample-data preview.
 
 ## Development
 
@@ -12,28 +12,30 @@ npm run dev
 npm test
 npm run build
 npm run preview
+npm run ios:sync
+npm run ios:open
 ```
 
 ## Architecture
 
-Following the HM Prep project: React 19 + TypeScript + Vite, with `vite-plugin-pwa` for an installable offline app. Training rules and import normalization are independent of UI components and covered by unit tests.
+Following the HM Prep project: React 19 + TypeScript + Vite for the UI and Capacitor for the native iOS shell. Training rules and HealthKit payload validation are independent of UI components and covered by unit tests.
 
 - `src/lib/recommendation.ts`: deterministic readiness and prescription rules.
-- `src/lib/import.ts`: validated normalized JSON and Apple Health XML parsing.
-- `src/workers/import.worker.ts`: imports off the main UI thread.
-- `src/lib/health.ts`: file import and native companion adapter boundary.
+- `ios/App/App/HealthKitPlugin.swift`: read-only HealthKit permission and queries.
+- `src/lib/health.ts`: typed Capacitor bridge for the native HealthKit plugin.
+- `src/lib/normalizeHealth.ts`: validates native data before it reaches the recommendation engine.
 - `src/hooks/useHealth.ts`: device-local state and storage failure handling.
 - `src/components`: dialogs and activity views.
 
-Health records are processed locally and stored in this browser’s local storage. There is no backend, account system, analytics, or external AI call. Sample data is labeled and separate from personal data. Preferences, check-ins, and plans persist locally. Imports replace the existing snapshot; export a backup before replacement if you have manually logged sessions to retain.
+Health records are read and processed on the iPhone and stored in the app’s local WebView storage. There is no backend, account system, analytics, or external AI call. Sample data is labeled and separate from personal data. Preferences, check-ins, and plans persist locally.
 
 ## Health integration status
 
-**Working now:** Apple Health `export.xml` import, normalized JSON import, activity browsing and filtering, manual session logging, recent recovery metrics and training load, personal baseline comparisons, daily check-ins, and PWA installation/offline assets.
+**Working now:** native Apple Health authorization and synchronization, activity browsing and filtering, manual session logging, recent recovery metrics and training load, personal baseline comparisons, daily check-ins, and offline assets.
 
-**Not implemented:** a native iOS/Android companion and automatic HealthKit/Health Connect synchronization. A PWA cannot directly request native HealthKit or Health Connect permissions. The interface explains this rather than showing a fake connection. The adapter in `docs/health-bridge.md` is the integration contract for that future companion.
+The iPhone app requests read access to workouts, sleep, HRV, resting heart rate, heart rate, steps, and distance. It requests no write access. See [`docs/healthkit.md`](docs/healthkit.md) for the data contract and device setup.
 
-Apple: Health → profile → Export All Health Data → unzip → choose `apple_health_export/export.xml` in the app. XML and JSON files up to 100 MB are supported, with the last 90 days retained. On-device timezone is used for daily summaries; overlapping sleep stages are merged and nighttime segments are assigned to the morning. For duplicate step sources, the source with the greatest daily total is used to avoid adding phone and watch totals together. This is an approximation of Health’s own source-priority logic.
+The native query keeps the most recent 90 days. On-device timezone is used for daily summaries, and overlapping sleep stages are merged before total sleep is calculated. Missing or unshared values remain missing.
 
 ## Readiness rules and limitations
 
@@ -47,8 +49,8 @@ Provider references:
 - [Health Connect setup](https://developer.android.com/health-and-fitness/health-connect/get-started)
 - [CDC: measuring activity intensity](https://www.cdc.gov/physical-activity-basics/measuring/index.html)
 
-## Deploy to Vercel
+## Web preview on Vercel
 
 `vercel.json` configures a Vite static deployment: `npm ci`, `npm run build`, output `dist`. Hash navigation works without blanket rewrites; service workers and manifests are revalidated, and hashed assets are cached immutably. No environment variables are required.
 
-Connect `yllfejziu/TrainToday` in Vercel and use the repository root. Deployments need HTTPS for PWA installation. In Safari on iPhone, use Share → Add to Home Screen. In Chrome on Android, use the browser’s Install app action. Open the app once while online so it can cache its assets, then check offline mode. Health imports remain local to each browser/device and do not sync between them.
+The production preview is deployed from `main` at [traintoday.vercel.app](https://traintoday.vercel.app). Browsers cannot access HealthKit, so the hosted version clearly remains in sample mode. Use the signed iOS build on a physical iPhone to test Apple Health permissions and personal data.
